@@ -21,6 +21,11 @@ on:
         required: false
         default: "false"
         type: string
+      skip_native:
+        description: "跳过原生可执行文件构建（仅需要 JAR 时使用）"
+        required: false
+        default: "false"
+        type: string
   workflow_dispatch:
     inputs:
       version:
@@ -37,6 +42,10 @@ on:
         default: "false"
       publish_latest:
         description: "是否推送 Docker latest 标签"
+        required: false
+        default: "false"
+      skip_native:
+        description: "跳过原生可执行文件构建（仅需要 JAR 时使用）"
         required: false
         default: "false"
 
@@ -132,6 +141,8 @@ jobs:
 
   build-native:
     name: 构建原生可执行文件:${{ matrix.os_name }}-${{ matrix.arch }}
+    # 只有 JAR 就够用的场景（例如 NAS 套件打包）可以跳过整个原生矩阵
+    if: inputs.skip_native != 'true'
     needs: build-frontend
     runs-on: ${{ matrix.os }}
     defaults:

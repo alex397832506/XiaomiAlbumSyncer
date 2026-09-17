@@ -51,7 +51,11 @@ on:
         default: "false"
 
 permissions:
-  contents: read
+  # 必须给到 contents: write。本工作流在手动触发时会调用可复用工作流 build.yml，
+  # 而 GitHub 要求被调用工作流申请的权限不得超过调用方，否则整个文件会被判为无效：
+  #   The workflow is requesting 'contents: write', but is only allowed 'contents: read'
+  # 该校验发生在解析阶段，与相关 job 是否会被跳过无关。
+  contents: write
 
 env:
   # 内置 ExifTool 的版本。升级时只需改这里，构建脚本会重新下载并做冒烟测试。
@@ -70,6 +74,8 @@ jobs:
       version: ${{ inputs.version }}
       publish_docker: "false"
       publish_latest: "false"
+      # 套件只需要 JAR，跳过原生可执行文件矩阵（含两个 macOS runner）
+      skip_native: "true"
     secrets: inherit
 
   build-exiftool:
