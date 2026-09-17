@@ -92,6 +92,40 @@ if grep -q '@' "${APP_DIR}/manifest" "${APP_DIR}/app/docker/docker-compose.yaml"
     exit 1
 fi
 
+echo "==> 生成应用图标"
+ICON_SRC="${REPO_ROOT}/static/xiaomi-album-syncer-logo.png"
+[ -f "${ICON_SRC}" ] || { echo "找不到图标源文件: ${ICON_SRC}" >&2; exit 1; }
+if command -v magick >/dev/null 2>&1; then
+    IM="magick"
+elif command -v convert >/dev/null 2>&1; then
+    IM="convert"
+else
+    echo "需要 ImageMagick（magick 或 convert）来生成 fnOS 图标" >&2
+    exit 1
+fi
+# fnpack 强制要求 ICON.PNG 与 ICON_256.PNG 同时存在，且文件名必须全大写
+"${IM}" "${ICON_SRC}" -background none -resize 64x64 -gravity center -extent 64x64 "${APP_DIR}/ICON.PNG"
+"${IM}" "${ICON_SRC}" -background none -resize 256x256 -gravity center -extent 256x256 "${APP_DIR}/ICON_256.PNG"
+
+echo "==> 校验 fnpack 要求的必备文件"
+MISSING=0
+for rel in manifest config/privilege config/resource ICON.PNG ICON_256.PNG; do
+    if [ ! -f "${APP_DIR}/${rel}" ]; then
+        echo "    缺少文件: ${rel}" >&2
+        MISSING=1
+    fi
+done
+for rel in app cmd wizard; do
+    if [ ! -d "${APP_DIR}/${rel}" ]; then
+        echo "    缺少目录: ${rel}" >&2
+        MISSING=1
+    fi
+done
+if [ "${MISSING}" -ne 0 ]; then
+    echo "fnOS 打包目录不完整，中止。必备清单见 packaging/README.md。" >&2
+    exit 1
+fi
+
 echo "==> 获取 fnpack ${FNPACK_VERSION}"
 FNPACK="${WORK_DIR}/fnpack"
 FNPACK_URL="https://static2.fnnas.com/fnpack/fnpack-${FNPACK_VERSION}-linux-amd64"

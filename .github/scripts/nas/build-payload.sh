@@ -66,13 +66,22 @@ OUT_DIR="$(mkdir -p "${OUT_DIR}" && cd "${OUT_DIR}" && pwd)"
 rm -rf "${OUT_DIR:?}/"*
 
 echo "==> 生成运行时 jre/ (${ARCH})"
-"${JAVA_HOME}/bin/jlink" \
-    --add-modules "${JLINK_MODULES}" \
-    --compress=zip-6 \
-    --strip-debug \
-    --no-header-files \
-    --no-man-pages \
+JLINK_ARGS=(
+    --add-modules "${JLINK_MODULES}"
+    --strip-debug
+    --no-header-files
+    --no-man-pages
     --output "${OUT_DIR}/jre"
+)
+# --compress=zip-N 是 JDK 21 起的写法。万一当前 JDK 不接受，退回不压缩，
+# 只损失几 MB 体积，不让整个构建挂掉。
+if "${JAVA_HOME}/bin/jlink" --compress=zip-6 "${JLINK_ARGS[@]}"; then
+    echo "    已启用 zip-6 压缩"
+else
+    echo "    --compress=zip-6 未被当前 JDK 接受，改用不压缩输出" >&2
+    rm -rf "${OUT_DIR}/jre"
+    "${JAVA_HOME}/bin/jlink" "${JLINK_ARGS[@]}"
+fi
 
 echo "==> 放置 JAR 与入口脚本"
 install -m 0644 "${JAR}" "${OUT_DIR}/app.jar"
@@ -81,10 +90,18 @@ install -m 0755 "${REPO_ROOT}/packaging/common/bin/xas-launch.sh" "${OUT_DIR}/bi
 install -m 0644 "${REPO_ROOT}/LICENSE" "${OUT_DIR}/LICENSE"
 
 if [ -n "${EXIFTOOL_DIST}" ]; then
-    [ -x "${EXIFTOOL_DIST}/bin/exiftool" ] || { echo "ExifTool 目录无效: ${EXIFTOOL_DIST}" >&2; exit 1; }
+    [ -f "${EXIFTOOL_DIST}/bin/exiftool" ] || { echo "ExifTool 目录无效: ${EXIFTOOL_DIST}" >&2; exit 1; }
     echo "==> 合入内置 ExifTool"
     mkdir -p "${OUT_DIR}/exiftool"
     cp -a "${EXIFTOOL_DIST}/." "${OUT_DIR}/exiftool/"
+
+    # actions/upload-artifact 与 download-artifact 不保留文件权限，ExifTool 运行时
+    # 经 artifact 中转后会丢掉可执行位，这里必须显式恢复，否则套件里的 ExifTool
+    # 无法被调用（应用执行 exiftool 时会直接报权限错误）。
+    chmod 0755 "${OUT_DIR}/exiftool/bin/exiftool"
+    for entry in "${OUT_DIR}/exiftool/perl-runtime/usr/bin/"*; do
+        [ -f "${entry}" ] && chmod 0755 "${entry}"
+    done
 else
     echo "==> 未提供 ExifTool，套件将不包含 EXIF 处理能力"
 fi
@@ -96,7 +113,8 @@ python3 "${SCRIPT_DIR}/verify-glibc.py" --max "${GLIBC_BASELINE}" "${VERIFY_PATH
 
 echo "==> 冒烟测试：确认运行时与应用都能跑起来"
 "${OUT_DIR}/jre/bin/java" -version
-if [ -x "${OUT_DIR}/exiftool/bin/exiftool" ]; then
+if [ -f "${OUT_DIR}/exiftool/bin/exiftool" ]; then
+    [ -x "${OUT_DIR}/exiftool/bin/exiftool" ] || { echo "ExifTool 入口缺少可执行位" >&2; exit 1; }
     echo "    exiftool -ver -> $("${OUT_DIR}/exiftool/bin/exiftool" -ver)"
 fi
 

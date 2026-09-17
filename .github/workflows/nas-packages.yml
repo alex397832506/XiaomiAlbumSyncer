@@ -256,6 +256,9 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v5
 
+      - name: 安装 ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends imagemagick
+
       - name: 计算镜像标签
         id: image
         env:
