@@ -1,7 +1,23 @@
 #!/bin/sh
 # 安装完成后执行。DSM 会紧接着调用 start-stop-status start。
+#
+# 关键点：本脚本由 DSM 以 **root** 身份执行，而套件固定以 package 用户运行
+# （DSM 7 不给未签名套件 root 权限）。因此这里只能把数据目录的所有权交给
+# package，绝不能用 root 去创建应用要写入的子目录——否则目录属主是 root，
+# 应用连数据库都建不出来，套件会以"无法启动"告终。
 PKG_NAME="xiaomi-album-syncer"
 VAR_DIR="/var/packages/${PKG_NAME}/var"
-mkdir -p "${VAR_DIR}/data"
-chmod 0755 "${VAR_DIR}" "${VAR_DIR}/data" 2>/dev/null
+
+if [ -d "${VAR_DIR}" ]; then
+    chown package "${VAR_DIR}" 2>/dev/null
+    chmod 0755 "${VAR_DIR}" 2>/dev/null
+fi
+
+# 顺手清掉可能由旧版本安装遗留的 root 属主目录，避免升级后仍然起不来
+for sub in data home logs; do
+    if [ -d "${VAR_DIR}/${sub}" ]; then
+        chown -R package "${VAR_DIR}/${sub}" 2>/dev/null
+    fi
+done
+
 exit 0

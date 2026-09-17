@@ -28,7 +28,16 @@ is_running() {
 }
 
 start_service() {
-    mkdir -p "${XAS_DATA}" "${XAS_HOME}" "${VAR_DIR}"
+    mkdir -p "${XAS_DATA}" "${XAS_HOME}" "${VAR_DIR}" 2>/dev/null
+
+    # 套件以 package 用户运行，数据目录必须可写，否则应用建不出数据库，
+    # 只会以"无法启动"收场而看不出原因，这里提前拦下并说清。
+    if [ ! -w "${VAR_DIR}" ]; then
+        echo "[${PKG_NAME}] ${VAR_DIR} 对当前用户不可写，应用无法保存数据。" >&2
+        echo "[${PKG_NAME}] 请确认该目录属主为 package。当前属主信息：" >&2
+        ls -ld "${VAR_DIR}" "${VAR_DIR}/data" 2>&1 >&2
+        return 1
+    fi
 
     if is_running; then
         return 0
@@ -40,14 +49,16 @@ start_service() {
     PID=$!
     echo "${PID}" > "${PID_FILE}"
 
-    # 给进程一点时间确认没有立即退出，便于早点把失败暴露在套件中心
+    # 给进程一点时间确认没有立即退出。失败时把日志尾部打到 stderr，
+    # DSM 会把它收进 /var/log/synopkg.log，便于直接看出真实原因。
     i=0
     while [ "${i}" -lt 5 ]; do
-        kill -0 "${PID}" 2>/dev/null || {
-            echo "xiaomi-album-syncer exited during startup, see ${LOG_FILE}" >&2
+        if ! kill -0 "${PID}" 2>/dev/null; then
+            echo "[${PKG_NAME}] 进程在启动阶段退出，${LOG_FILE} 末尾内容：" >&2
+            tail -n 40 "${LOG_FILE}" >&2 2>/dev/null
             rm -f "${PID_FILE}"
             return 1
-        }
+        fi
         i=$((i + 1))
         sleep 1
     done
