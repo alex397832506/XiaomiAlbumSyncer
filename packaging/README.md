@@ -123,6 +123,20 @@ ExifTool 是 Perl 程序，而且应用用到了 `-if` 条件表达式与 `-over
 
 依赖：`bash`、`python3`、`curl`、`tar`、`xz`、`ImageMagick`、`docker`。
 
+> [!IMPORTANT]
+> **在 Windows 上新增脚本时，必须显式补上可执行位。**
+> Windows 文件系统没有 exec 位，仓库又是 `core.filemode=false`，git 无法从磁盘推断，
+> 新文件会被记成 `100644`，在 Linux/CI 上以 `./script.sh` 调用会直接
+> `Permission denied`（退出码 126）。补法是：
+>
+> ```bash
+> git update-index --chmod=+x .github/scripts/nas/your-script.sh
+> git ls-files -s .github/scripts/nas/your-script.sh   # 确认是 100755
+> ```
+>
+> 换行符同理，必须在 `.gitattributes` 的覆盖范围内，否则 `core.autocrlf=true`
+> 会把脚本转成 CRLF，在 NAS 上无法执行。
+
 ```bash
 VERSION=0.18.0
 ARCH=x86_64          # 或 arm64 / armv8 / arm_64，视平台而定
@@ -160,7 +174,7 @@ JAVA_HOME=/path/to/jdk25 ./.github/scripts/nas/build-payload.sh \
 
 | 变量 | 作用 | 默认值 |
 | --- | --- | --- |
-| `EXIFTOOL_VERSION` | 内置 ExifTool 版本 | `13.57` |
+| `EXIFTOOL_VERSION` | 内置 ExifTool 版本 | `13.59` |
 | `FNPACK_VERSION` | 飞牛打包工具版本 | `1.2.3` |
 | `GLIBC_BASELINE` | 允许的最高 glibc 版本 | `2.26` |
 | `DSM_UI` | 设为 `0` 时不生成群晖桌面入口 | `1` |

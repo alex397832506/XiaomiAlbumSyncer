@@ -16,7 +16,7 @@
 #   build-exiftool-dist.sh --arch x86_64|x86_64 --out <目录>
 #
 # 可用环境变量：
-#   EXIFTOOL_VERSION  ExifTool 版本，默认 13.57
+#   EXIFTOOL_VERSION  ExifTool 版本，默认 13.59
 #   GLIBC_BASELINE    允许的最高 glibc 版本，默认 2.26
 set -euo pipefail
 
@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 ARCH=""
 OUT_DIR=""
-EXIFTOOL_VERSION="${EXIFTOOL_VERSION:-13.57}"
+EXIFTOOL_VERSION="${EXIFTOOL_VERSION:-13.59}"
 GLIBC_BASELINE="${GLIBC_BASELINE:-2.26}"
 
 usage() {
@@ -63,10 +63,32 @@ python3 "${SCRIPT_DIR}/fetch-perl-runtime.py" \
 
 echo "==> 下载 ExifTool ${EXIFTOOL_VERSION}"
 ET_TARBALL="${WORK_DIR}/exiftool.tar.gz"
-ET_URL="https://exiftool.org/Image-ExifTool-${EXIFTOOL_VERSION}.tar.gz"
-if ! curl -fsSL --retry 3 --retry-all-errors -o "${ET_TARBALL}" "${ET_URL}"; then
-    echo "下载 ${ET_URL} 失败。" >&2
-    echo "请通过环境变量 EXIFTOOL_VERSION 指定一个可用版本，或检查网络。" >&2
+# exiftool.org 目前是临时页，官方下载链接已全部改指向 SourceForge，
+# 因此这里按可靠性依次回退，避免单点失效导致构建中断。
+ET_SOURCES=(
+    "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-${EXIFTOOL_VERSION}.tar.gz/download"
+    "https://downloads.sourceforge.net/project/exiftool/Image-ExifTool-${EXIFTOOL_VERSION}.tar.gz"
+    "https://exiftool.org/Image-ExifTool-${EXIFTOOL_VERSION}.tar.gz"
+)
+DOWNLOADED=0
+for url in "${ET_SOURCES[@]}"; do
+    echo "    尝试 ${url}"
+    if curl -fsSL --retry 2 --retry-all-errors -o "${ET_TARBALL}" "${url}"; then
+        DOWNLOADED=1
+        break
+    fi
+done
+if [ "${DOWNLOADED}" -ne 1 ]; then
+    echo "ExifTool ${EXIFTOOL_VERSION} 下载失败，以上地址均已尝试。" >&2
+    echo "可通过环境变量 EXIFTOOL_VERSION 指定其它版本。" >&2
+    exit 1
+fi
+
+# SourceForge 在跳转失败时会返回 HTML 提示页，这里确认拿到的是真正的 gzip 流
+if [ "$(head -c 2 "${ET_TARBALL}" | od -An -tx1 | tr -d ' \n')" != "1f8b" ]; then
+    echo "下载到的内容不是 gzip 压缩包，可能是错误页面。前 200 字节：" >&2
+    head -c 200 "${ET_TARBALL}" >&2
+    echo >&2
     exit 1
 fi
 

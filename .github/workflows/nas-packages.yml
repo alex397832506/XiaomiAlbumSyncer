@@ -59,7 +59,7 @@ permissions:
 
 env:
   # 内置 ExifTool 的版本。升级时只需改这里，构建脚本会重新下载并做冒烟测试。
-  EXIFTOOL_VERSION: "13.57"
+  EXIFTOOL_VERSION: "13.59"
   # 飞牛官方打包工具版本。
   FNPACK_VERSION: "1.2.3"
   # 随包二进制允许要求的最高 glibc 版本。群晖 DSM 7.0/7.1 只有 glibc 2.26。
