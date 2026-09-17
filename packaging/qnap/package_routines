@@ -1,0 +1,45 @@
+#!/bin/sh
+# 威联通套件安装/卸载钩子，由随包的 qinstall.sh 在对应阶段调用。
+#
+# 可用变量（由 qinstall.sh 设置）：
+#   SYS_QPKG_DIR      套件安装目录，data.tar.gz 已解包到此处
+#   SYS_CPU_ARCH      设备架构，取值 x86_64 / arm_64
+# 以及 qpkg.cfg 中定义的 QPKG_* 变量。
+
+pkg_init() {
+    :
+}
+
+pkg_pre_install() {
+    :
+}
+
+pkg_install() {
+    :
+}
+
+pkg_post_install() {
+    # tar 解包通常会保留权限，这里只对入口做兜底修正，避免个别机型因 umask 丢失可执行位
+    chmod 0755 "${SYS_QPKG_DIR}/bin/xas-launch.sh" 2>/dev/null
+    chmod 0755 "${SYS_QPKG_DIR}/exiftool/bin/exiftool" 2>/dev/null
+    chmod 0755 "${SYS_QPKG_DIR}/jre/bin/java" 2>/dev/null
+
+    mkdir -p "${SYS_QPKG_DIR}/data"
+}
+
+pkg_pre_remove() {
+    # 卸载前先停掉服务，避免残留进程占用 8080 端口
+    if [ -x "${SYS_QPKG_DIR}/xiaomi-album-syncer.sh" ]; then
+        "${SYS_QPKG_DIR}/xiaomi-album-syncer.sh" stop >/dev/null 2>&1
+    fi
+}
+
+pkg_main_remove() {
+    :
+}
+
+pkg_post_remove() {
+    # 刻意保留 ${SYS_QPKG_DIR}/data：QTS 卸载时会询问是否一并删除安装目录，
+    # 由用户决定是否丢弃数据库与账号配置。
+    :
+}

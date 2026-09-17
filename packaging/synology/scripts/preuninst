@@ -1,0 +1,8 @@
+#!/bin/sh
+# 卸载前执行：先确保应用进程退出，避免残留进程占用端口。
+PKG_NAME="xiaomi-album-syncer"
+PKG_DIR="/var/packages/${PKG_NAME}/target"
+
+"/var/packages/${PKG_NAME}/scripts/start-stop-status" stop >/dev/null 2>&1
+pkill -f "${PKG_DIR}/app.jar" 2>/dev/null
+exit 0

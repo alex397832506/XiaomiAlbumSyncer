@@ -1,0 +1,278 @@
+name: XAS NAS Packages
+
+# 把应用打包成飞牛 fnOS、群晖 DSM 7、威联通 QTS 三个平台的套件。
+#
+# 既可以被 cd.yml 复用（此时 JAR 产物已经由前置构建产出），
+# 也可以手动触发单独出包（此时会先自行构建一次前端与 JAR）。
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "版本号，例如 0.18.0 或 0.18.0-rc.1"
+        required: true
+        type: string
+      image:
+        description: "Docker 镜像仓库"
+        required: false
+        default: "coolfan1024/xiaomi-album-syncer"
+        type: string
+      image_tag:
+        description: "Docker 镜像标签，默认与版本号一致；必须与已推送的标签完全相同"
+        required: false
+        default: ""
+        type: string
+      jar_ready:
+        description: "调用方已产出 JAR 产物（cd.yml 传入 true 可省去重复构建）"
+        required: false
+        default: "false"
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，例如 0.18.0"
+        required: true
+        type: string
+      image:
+        description: "Docker 镜像仓库"
+        required: false
+        default: "coolfan1024/xiaomi-album-syncer"
+      image_tag:
+        description: "Docker 镜像标签，需已推送到镜像仓库；留空表示与版本号一致"
+        required: false
+        default: ""
+      jar_ready:
+        description: "已有同名 JAR 产物，跳过构建"
+        required: false
+        default: "false"
+      skip_image_check:
+        description: "跳过飞牛镜像存在性校验"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+env:
+  # 内置 ExifTool 的版本。升级时只需改这里，构建脚本会重新下载并做冒烟测试。
+  EXIFTOOL_VERSION: "13.57"
+  # 飞牛官方打包工具版本。
+  FNPACK_VERSION: "1.2.3"
+  # 随包二进制允许要求的最高 glibc 版本。群晖 DSM 7.0/7.1 只有 glibc 2.26。
+  GLIBC_BASELINE: "2.26"
+
+jobs:
+  ensure-assets:
+    name: 准备构建产物
+    if: ${{ inputs.jar_ready != 'true' }}
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ inputs.version }}
+      publish_docker: "false"
+      publish_latest: "false"
+    secrets: inherit
+
+  build-exiftool:
+    name: 构建内置 ExifTool:${{ matrix.arch_name }}
+    needs: ensure-assets
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch_name: x86_64
+            deb_arch: amd64
+            runner: ubuntu-24.04
+          - arch_name: arm64
+            deb_arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 缓存 Debian 归档软件包
+        uses: actions/cache@v6
+        with:
+          path: .cache/perl-debs
+          key: perl-debs-stretch-${{ matrix.deb_arch }}-${{ env.EXIFTOOL_VERSION }}
+
+      - name: 构建 ExifTool 运行时
+        env:
+          PERL_DEB_CACHE: ${{ github.workspace }}/.cache/perl-debs
+        run: |
+          ./.github/scripts/nas/build-exiftool-dist.sh \
+            --arch "${{ matrix.arch_name }}" \
+            --out "${GITHUB_WORKSPACE}/dist/exiftool"
+
+      - name: 上传 ExifTool 运行时
+        uses: actions/upload-artifact@v7
+        with:
+          name: nas-exiftool-${{ matrix.arch_name }}
+          path: dist/exiftool
+          if-no-files-found: error
+
+  package-synology:
+    name: 打包群晖 SPK:${{ matrix.arch }}
+    needs: [ensure-assets, build-exiftool]
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # DSM 7 的架构族只有 x86_64 与 armv8 两档，见官方 pkg_util.sh:plat_to_family
+          - arch: x86_64
+            java_arch: x64
+            runner: ubuntu-24.04
+          - arch: armv8
+            java_arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 JDK 环境
+        uses: actions/setup-java@v5
+        with:
+          java-version: "25"
+          distribution: "temurin"
+          architecture: ${{ matrix.java_arch }}
+
+      - name: 安装 ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends imagemagick
+
+      - name: 下载 JAR 产物
+        uses: actions/download-artifact@v7
+        with:
+          name: jar
+          path: dist/jar
+
+      - name: 下载 ExifTool 运行时
+        uses: actions/download-artifact@v7
+        with:
+          name: nas-exiftool-${{ matrix.arch == 'armv8' && 'arm64' || 'x86_64' }}
+          path: dist/exiftool
+
+      - name: 组装载荷
+        run: |
+          JAR_FILE="$(find dist/jar -name '*.jar' | head -n 1)"
+          ./.github/scripts/nas/build-payload.sh \
+            --arch "${{ matrix.arch }}" \
+            --jar "${JAR_FILE}" \
+            --exiftool-dist dist/exiftool \
+            --out dist/payload
+
+      - name: 组装 SPK
+        run: |
+          ./.github/scripts/nas/build-synology.sh \
+            --version "${{ inputs.version }}" \
+            --arch "${{ matrix.arch }}" \
+            --payload dist/payload \
+            --out dist/spk
+
+      - name: 上传 SPK 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: nas-synology-${{ matrix.arch }}
+          path: dist/spk/*.spk
+          if-no-files-found: error
+
+  package-qnap:
+    name: 打包威联通 QPKG:${{ matrix.arch }}
+    needs: [ensure-assets, build-exiftool]
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            java_arch: x64
+            runner: ubuntu-24.04
+          - arch: arm_64
+            java_arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 JDK 环境
+        uses: actions/setup-java@v5
+        with:
+          java-version: "25"
+          distribution: "temurin"
+          architecture: ${{ matrix.java_arch }}
+
+      - name: 安装 ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends imagemagick
+
+      - name: 下载 JAR 产物
+        uses: actions/download-artifact@v7
+        with:
+          name: jar
+          path: dist/jar
+
+      - name: 下载 ExifTool 运行时
+        uses: actions/download-artifact@v7
+        with:
+          name: nas-exiftool-${{ matrix.arch == 'arm_64' && 'arm64' || 'x86_64' }}
+          path: dist/exiftool
+
+      - name: 组装载荷
+        run: |
+          JAR_FILE="$(find dist/jar -name '*.jar' | head -n 1)"
+          ./.github/scripts/nas/build-payload.sh \
+            --arch "${{ matrix.arch }}" \
+            --jar "${JAR_FILE}" \
+            --exiftool-dist dist/exiftool \
+            --out dist/payload
+
+      - name: 组装 QPKG
+        run: |
+          ./.github/scripts/nas/build-qnap.sh \
+            --version "${{ inputs.version }}" \
+            --arch "${{ matrix.arch }}" \
+            --payload dist/payload \
+            --out dist/qpkg
+
+      - name: 上传 QPKG 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: nas-qnap-${{ matrix.arch }}
+          path: dist/qpkg/*.qpkg
+          if-no-files-found: error
+
+  package-fnos:
+    name: 打包飞牛 fpk
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 计算镜像标签
+        id: image
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          TAG="${INPUT_TAG:-${VERSION}}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "使用镜像标签 ${TAG}"
+
+      - name: 组装 FPK
+        run: |
+          ./.github/scripts/nas/build-fnos.sh \
+            --version "${{ inputs.version }}" \
+            --image "${{ inputs.image }}" \
+            --image-tag "${{ steps.image.outputs.tag }}" \
+            --out dist/fpk
+        env:
+          SKIP_IMAGE_CHECK: ${{ inputs.skip_image_check == 'true' && '1' || '0' }}
+
+      - name: 上传 FPK 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: nas-fnos
+          path: dist/fpk/*.fpk
+          if-no-files-found: error

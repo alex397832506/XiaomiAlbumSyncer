@@ -1,0 +1,17 @@
+#!/bin/sh
+# 安装前检查。返回非 0 会中止安装。
+#
+# 架构兼容性与 DSM 版本下限已由 INFO 里的 arch / os_min_ver 交给套件中心校验，
+# 这里只做一次兜底提示，避免把明显不兼容的机器放进来。
+PKG_NAME="xiaomi-album-syncer"
+
+CPU_ARCH="$(uname -m)"
+case "${CPU_ARCH}" in
+    x86_64 | aarch64) ;;
+    *)
+        echo "[${PKG_NAME}] 不支持的 CPU 架构: ${CPU_ARCH}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,11 @@
+#!/bin/sh
+# 卸载完成后执行。
+#
+# 这里刻意不删除用户数据：数据库与下载记录都留在 /var/packages/xiaomi-album-syncer/var/data，
+# 由套件中心的“卸载时是否删除数据”选项决定，避免误删导致重新配置账号。
+PKG_NAME="xiaomi-album-syncer"
+VAR_DIR="/var/packages/${PKG_NAME}/var"
+if [ -d "${VAR_DIR}/data" ]; then
+    echo "[${PKG_NAME}] 数据目录保留在 ${VAR_DIR}/data，如需彻底清理请手动删除。"
+fi
+exit 0

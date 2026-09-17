@@ -66,6 +66,20 @@ jobs:
       publish_latest: ${{ needs.prepare-release.outputs.publish_latest }}
     secrets: inherit
 
+  build-nas-packages:
+    name: 打包 NAS 套件
+    needs:
+      - prepare-release
+      - build-assets
+    uses: ./.github/workflows/nas-packages.yml
+    with:
+      version: ${{ needs.prepare-release.outputs.version }}
+      # 飞牛套件引用的是 Docker 镜像标签，必须与 build-assets 推送的标签完全一致，
+      # 否则用户安装时会报 manifest unknown
+      image_tag: ${{ needs.prepare-release.outputs.version }}
+      jar_ready: 'true'
+    secrets: inherit
+
   create-draft-release:
     name: 创建 tag 与草稿 Release
     needs:
@@ -93,6 +107,7 @@ jobs:
     needs:
       - prepare-release
       - create-draft-release
+      - build-nas-packages
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -107,7 +122,7 @@ jobs:
       - name: 下载 Release 产物
         uses: actions/download-artifact@v7
         with:
-          pattern: '{jar,native-*}'
+          pattern: '{jar,native-*,nas-*}'
           path: dist
           merge-multiple: true
 
@@ -149,6 +164,9 @@ jobs:
             dist/xiaomi-album-syncer-macos-x64-v${{ needs.prepare-release.outputs.version }}.zip
             dist/xiaomi-album-syncer-macos-arm64-v${{ needs.prepare-release.outputs.version }}.zip
             dist/xiaomi-album-syncer-windows-x64-v${{ needs.prepare-release.outputs.version }}.exe.zip
+            dist/*.spk
+            dist/*.qpkg
+            dist/*.fpk
 
       - name: 上传到 Release
         env:
@@ -165,6 +183,18 @@ jobs:
             "dist/xiaomi-album-syncer-windows-x64-v${VERSION}.exe.zip" \
             "dist/xiaomi-album-syncer-v${VERSION}.jar.zip" \
             --clobber
+
+          # NAS 套件本身就是归档格式，直接上传不再套一层 zip。
+          # 文件名里含有被裁剪过的版本号（例如 0.18.0-rc.1 在 QPKG 中写作 0.18.0rc.1），
+          # 因此这里用通配符匹配而不是拼字符串。
+          shopt -s nullglob
+          NAS_FILES=(dist/*.spk dist/*.qpkg dist/*.fpk)
+          if [ "${#NAS_FILES[@]}" -eq 0 ]; then
+            echo "::error::没有找到任何 NAS 套件产物"
+            exit 1
+          fi
+          printf '上传 NAS 套件: %s\n' "${NAS_FILES[@]}"
+          gh release upload "$VERSION" "${NAS_FILES[@]}" --clobber
 
   publish-release:
     name: 公开 Release

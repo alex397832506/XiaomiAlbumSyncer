@@ -1,0 +1,102 @@
+#!/bin/sh
+# 威联通 QPKG 自解压安装头。
+#
+# 本文件由 .github/scripts/nas/build-qnap.sh 渲染占位符后，与 control.tar、
+# data.tar.gz 以及 100 字节尾部拼接成最终的 .qpkg。
+#
+# 文件布局：
+#   [本脚本，长度 script_len] [control.tar，长度 @CTRL_LEN@] [data.tar.gz，长度 @DATA_LEN@] [尾部 100 字节]
+#
+# 执行流程：定位安装卷 -> 校验 CPU 架构 -> 取出 control 包 -> 取出 data 包
+# -> 执行 qinstall.sh -> 清理临时目录 -> 以 exit 10 结束（要求 QTS 删除 .qpkg 文件）。
+QPKG_NAME="@QPKG_NAME@"
+QPKG_DISPLAY_NAME="@QPKG_DISPLAY_NAME@"
+QPKG_VER="@QPKG_VER@"
+
+find_base(){
+	HDD_MOUNT=`/sbin/getcfg Public path -f /etc/config/smb.conf`
+
+	if [ -e "$HDD_MOUNT" ]; then
+		if [ -z "$QINSTALL_PATH" ]; then
+			publicdir=`/sbin/getcfg Public path -f /etc/config/smb.conf`
+			if [ ! -z "$publicdir" ] && [ -d "$publicdir" ]; then
+				publicdirp1=`/bin/echo "$publicdir" | /bin/cut -d "/" -f 2`
+				publicdirp2=`/bin/echo "$publicdir" | /bin/cut -d "/" -f 3`
+				if [ ! -z "$publicdirp1" ] && [ ! -z "$publicdirp2" ] && [ -d "/$publicdirp1/$publicdirp2/Public" ]; then
+					QPKG_BASE="/$publicdirp1/$publicdirp2"
+				fi
+			fi
+
+			# Public 共享不存在时，按存储卷顺序逐个探测
+			if [ -z "$QPKG_BASE" ]; then
+				for datadirtest in /share/CACHEDEV1_DATA /share/CACHEDEV2_DATA /share/CACHEDEV3_DATA /share/CACHEDEV4_DATA \
+					/share/HDA_DATA /share/HDB_DATA /share/HDC_DATA /share/HDD_DATA /share/HDE_DATA /share/HDF_DATA \
+					/share/HDG_DATA /share/HDH_DATA /share/HDI_DATA /share/HDJ_DATA /share/HDK_DATA /share/HDL_DATA \
+					/share/MD0_DATA /share/MD1_DATA /share/MD2_DATA /share/MD3_DATA; do
+					if [ -d "$datadirtest/Public" ]; then
+						QPKG_BASE="$datadirtest"
+						break
+					fi
+				done
+			fi
+
+			if [ -z "$QPKG_BASE" ]; then
+				echo "The Public share not found."
+				return 1
+			fi
+			QPKG_INSTALL_PATH="$QPKG_BASE/.qpkg"
+			QPKG_DIR="$QPKG_INSTALL_PATH/$QPKG_NAME"
+		else
+			if [ -e "$QINSTALL_PATH" ]; then
+				QPKG_INSTALL_PATH="$QINSTALL_PATH"
+				QPKG_DIR="$QINSTALL_PATH/$QPKG_NAME"
+			else
+				echo "[App Center] Failed to install $QPKG_DISPLAY_NAME. The selected installation volume is missing."
+				echo -1 > /tmp/update_process && exit 1
+			fi
+		fi
+		return 0
+	else
+		if [ -d "/mnt/HDA_ROOT/update_pkg" ]; then
+			QPKG_INSTALL_PATH="/mnt/HDA_ROOT/update_pkg"
+			QPKG_DIR="$QPKG_INSTALL_PATH/$QPKG_NAME"
+		else
+			echo "[App Center] Failed to install $QPKG_DISPLAY_NAME. The selected installation volume is missing."
+			echo -1 > /tmp/update_process && exit 1
+		fi
+	fi
+}
+
+wrong_arch(){
+	echo "Installation Abort."
+	echo "[App Center] Failed to install $QPKG_DISPLAY_NAME $QPKG_VER. Installation package is incompatible. Use the correct package."
+	/sbin/log_tool -t2 -uSystem -p127.0.0.1 -mlocalhost -a "[App Center] Failed to install $QPKG_DISPLAY_NAME $QPKG_VER. Installation package is incompatible. Use the correct package." 2>/dev/null
+	echo -1 > /tmp/update_process && exit 1
+}
+
+arch_ok(){
+	/bin/uname -m | /bin/grep -q '^@CPU_ARCH_PATTERN@$'
+}
+
+/bin/echo "Install QNAP package on TS-NAS..."
+/bin/grep "/mnt/HDA_ROOT" /proc/mounts >/dev/null 2>&1 || exit 1
+arch_ok || wrong_arch
+
+find_base || exit 1
+
+_EXTRACT_DIR="$QPKG_INSTALL_PATH/.tmp-$QPKG_NAME"
+/bin/mkdir -p "$_EXTRACT_DIR" || exit 1
+
+script_len=0000000000
+/bin/dd if="${0}" bs=$script_len skip=1 2>/dev/null | /bin/tar -xO 2>/dev/null | /bin/tar -xzv -C "$_EXTRACT_DIR" || exit 1
+
+offset=`/usr/bin/expr $script_len + @CTRL_LEN@`
+/bin/dd if="${0}" bs=$offset skip=1 2>/dev/null | /bin/dd bs=1024 count=@DATA_BLOCKS@ of="$_EXTRACT_DIR/data.tar.gz" 2>/dev/null || exit 1
+
+# dd 按 1024 字节整块读取，末尾会多带出不足一块的字节，这里精确截断到实际长度
+/bin/dd if="$_EXTRACT_DIR/data.tar.gz" of="$_EXTRACT_DIR/data.tar.gz.trunc" bs=@DATA_LEN@ count=1 2>/dev/null
+/bin/mv -f "$_EXTRACT_DIR/data.tar.gz.trunc" "$_EXTRACT_DIR/data.tar.gz"
+
+( cd "$_EXTRACT_DIR" && /bin/sh qinstall.sh || echo "Installation Abort." )
+/bin/rm -fr "$_EXTRACT_DIR" && exit 10
+exit 1

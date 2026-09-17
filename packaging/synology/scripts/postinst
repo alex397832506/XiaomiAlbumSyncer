@@ -1,0 +1,7 @@
+#!/bin/sh
+# 安装完成后执行。DSM 会紧接着调用 start-stop-status start。
+PKG_NAME="xiaomi-album-syncer"
+VAR_DIR="/var/packages/${PKG_NAME}/var"
+mkdir -p "${VAR_DIR}/data"
+chmod 0755 "${VAR_DIR}" "${VAR_DIR}/data" 2>/dev/null
+exit 0

@@ -1,0 +1,11 @@
+# 套件脚本会原样投放到 NAS 上由 sh/dash 执行，必须是 LF 换行，
+# 因此这里显式声明，避免 core.autocrlf 把脚本转成 CRLF 导致执行失败。
+packaging/** text eol=lf
+.github/scripts/** text eol=lf
+*.sh text eol=lf
+
+# 二进制资源不做换行转换
+*.PNG binary
+*.png binary
+*.gif binary
+*.ico binary

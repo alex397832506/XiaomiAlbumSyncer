@@ -1,0 +1,15 @@
+# 飞牛 fnOS 应用元信息模板，由 .github/scripts/nas/build-fnos.sh 渲染 @VERSION@。
+#
+# 字段与取值来自官方 `fnpack create --template docker --without-ui true` 生成的模板。
+# 约束：
+#   - appname 决定产物文件名（<appname>.fpk），仅允许小写字母、数字与连字符
+#   - version 必须是 X.Y.Z 形式，预发布后缀会在构建时被裁剪
+#   - platform 目前仅支持 x86（飞牛尚未开放第三方 ARM 应用）
+appname      = xiaomi-album-syncer
+version      = @VERSION@
+display_name = Xiaomi Album Syncer
+desc         = 把小米云服务中的相册与录音同步到本地
+platform     = x86
+source       = thirdparty
+maintainer   = Coooolfan
+distributor  = Coooolfan

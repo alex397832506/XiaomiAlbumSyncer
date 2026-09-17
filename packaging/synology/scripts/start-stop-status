@@ -1,0 +1,93 @@
+#!/bin/sh
+# 群晖套件生命周期脚本：DSM 在启动、停止、查询状态与查看日志时调用。
+#
+# 调用约定：
+#   start  启动成功返回 0
+#   stop   停止成功返回 0
+#   status 运行中返回 0，未运行返回 1
+#   log    向标准输出打印日志文件路径
+#
+# DSM 7 下本脚本以 package 用户身份运行。
+PKG_NAME="xiaomi-album-syncer"
+PKG_DIR="/var/packages/${PKG_NAME}/target"
+VAR_DIR="/var/packages/${PKG_NAME}/var"
+
+PID_FILE="${VAR_DIR}/xas.pid"
+LOG_FILE="${VAR_DIR}/xas.log"
+
+XAS_ROOT="${PKG_DIR}"
+XAS_DATA="${VAR_DIR}/data"
+XAS_HOME="${VAR_DIR}/home"
+export XAS_ROOT XAS_DATA XAS_HOME
+
+is_running() {
+    [ -f "${PID_FILE}" ] || return 1
+    PID="$(cat "${PID_FILE}" 2>/dev/null)"
+    [ -n "${PID}" ] || return 1
+    kill -0 "${PID}" 2>/dev/null
+}
+
+start_service() {
+    mkdir -p "${XAS_DATA}" "${XAS_HOME}" "${VAR_DIR}"
+
+    if is_running; then
+        return 0
+    fi
+    rm -f "${PID_FILE}"
+
+    echo "----- $(date '+%Y-%m-%d %H:%M:%S') starting ${PKG_NAME} -----" >> "${LOG_FILE}"
+    nohup "${PKG_DIR}/bin/xas-launch.sh" >> "${LOG_FILE}" 2>&1 &
+    PID=$!
+    echo "${PID}" > "${PID_FILE}"
+
+    # 给进程一点时间确认没有立即退出，便于早点把失败暴露在套件中心
+    i=0
+    while [ "${i}" -lt 5 ]; do
+        kill -0 "${PID}" 2>/dev/null || {
+            echo "xiaomi-album-syncer exited during startup, see ${LOG_FILE}" >&2
+            rm -f "${PID_FILE}"
+            return 1
+        }
+        i=$((i + 1))
+        sleep 1
+    done
+    return 0
+}
+
+stop_service() {
+    if [ -f "${PID_FILE}" ]; then
+        PID="$(cat "${PID_FILE}" 2>/dev/null)"
+        if [ -n "${PID}" ]; then
+            kill "${PID}" 2>/dev/null
+            i=0
+            while kill -0 "${PID}" 2>/dev/null && [ "${i}" -lt 30 ]; do
+                i=$((i + 1))
+                sleep 1
+            done
+            kill -9 "${PID}" 2>/dev/null
+        fi
+        rm -f "${PID_FILE}"
+    fi
+    # 兜底：PID 文件丢失时按命令行特征清理残留进程
+    pkill -f "${PKG_DIR}/app.jar" 2>/dev/null
+    return 0
+}
+
+case "$1" in
+    start)
+        start_service
+        ;;
+    stop)
+        stop_service
+        ;;
+    status)
+        is_running
+        ;;
+    log)
+        echo "${LOG_FILE}"
+        ;;
+    *)
+        echo "usage: $0 {start|stop|status|log}" >&2
+        exit 1
+        ;;
+esac

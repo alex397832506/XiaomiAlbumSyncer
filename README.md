@@ -122,6 +122,46 @@
 
   打开浏览器，访问 `http://localhost:8232`（如果你在本地运行 Docker），或者替换为你的服务器 IP 地址和端口。
 
+### NAS 套件（飞牛 / 群晖 / 威联通）
+
+Release 页面附带三个平台的套件。它们都是**未签名**构建，安装前需要先在套件中心放开限制。
+
+| 平台 | 文件 | 适用系统 | 安装方式 |
+| --- | --- | --- | --- |
+| 飞牛 fnOS | `xiaomi-album-syncer-<版本>.fpk` | fnOS（仅 x86_64） | 应用中心 → 右上角设置 → 手动安装应用 |
+| 群晖 DSM | `xiaomi-album-syncer-x86_64-<版本>.spk`<br>`xiaomi-album-syncer-armv8-<版本>.spk` | DSM 7.0 及以上 | 套件中心 → 设置 → 常规 → 信任层级改为「任何发行者」，再点右上角「手动安装」 |
+| 威联通 QTS | `xiaomi-album-syncer-x86_64-<版本>.qpkg`<br>`xiaomi-album-syncer-arm_64-<版本>.qpkg` | QTS 5.x | App Center → 右上角设置 → 常规 → 勾选「允许在没有数字签名的情况下安装并执行应用程序」，再点右上角「手动安装」 |
+
+三者的实现方式不同：
+
+- **飞牛**：套件内部是一个 Docker 容器，直接复用官方镜像，因此设备需要有容器运行时（fnOS 自带）。端口映射可以在应用详情里调整。
+- **群晖 / 威联通**：套件自带精简 JRE 与 ExifTool，不依赖 NAS 上的 Java、Perl 或 Docker 环境。
+  - 群晖 DSM 7 不允许未签名套件以 root 运行，所以套件以 `package` 用户身份启动并监听 8080（非特权端口），数据存放在 `/var/packages/xiaomi-album-syncer/var/data`。
+  - 威联通的数据存放在套件安装目录下的 `data/`。另外，无签名应用在固件升级后可能不会自动启动，需要手动启动一次。
+
+安装完成后访问 `http://<NAS 地址>:8080`。
+
+#### 自定义端口与内存
+
+群晖与威联通套件支持在数据目录下放一个 `xas.env` 覆盖默认配置：
+
+```ini
+SERVER_PORT=18080
+JAVA_CAPACITY_OPTS="-Xmx1g -XX:SoftMaxHeapSize=768m"
+# 需要用 Passkey 登录时，填写实际访问域名
+WEBAUTHN_RP_ID=nas.example.com
+```
+
+- 群晖：`/var/packages/xiaomi-album-syncer/var/data/xas.env`
+- 威联通：`<套件安装目录>/data/xas.env`
+
+改完在套件中心重启套件即可生效。
+
+#### 关于 ExifTool
+
+群晖与威联通套件内置了 ExifTool 以及配套的 Perl 运行时，开箱即可处理 EXIF，无需额外安装。
+如果想改用系统里已有的 ExifTool，在应用内的「系统设置」里把 `exiftool` 路径改成绝对路径即可。
+
 ## 反向代理（可选）
 
 **强烈建议在任何情况下访问此服务都启用 HTTPS 。**

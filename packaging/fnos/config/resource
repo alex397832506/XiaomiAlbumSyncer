@@ -1,0 +1,20 @@
+{
+  "docker-project": {
+    "projects": [
+      {
+        "name": "xiaomi-album-syncer",
+        "path": "docker"
+      }
+    ]
+  },
+  "data-share": {
+    "shares": [
+      {
+        "name": "xiaomi-album-syncer"
+      },
+      {
+        "name": "xiaomi-album-syncer/data"
+      }
+    ]
+  }
+}

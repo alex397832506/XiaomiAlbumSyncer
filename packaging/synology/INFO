@@ -1,0 +1,30 @@
+# 群晖套件元信息模板。
+#
+# 字段与取值规则对齐 Synology 官方 pkgscripts-ng/include/pkg_util.sh:pkg_dump_info，
+# 顺序也保持一致；@VERSION@ / @ARCH@ 由 .github/scripts/nas/build-synology.sh 渲染。
+#
+# 注意：
+#   - os_min_ver 必须 >= 7.0-40000，这是 DSM 7 套件的硬性下限。
+#   - arch 使用 DSM 7 的“架构族”取值，仅 x86_64 与 armv8 两档，见 plat_to_family()。
+#   - 未签名套件无法取得 root 权限，因此 conf/privilege 固定以 package 用户运行。
+package="xiaomi-album-syncer"
+version="@VERSION@"
+maintainer="Coooolfan"
+maintainer_url="https://github.com/Coooolfan/XiaomiAlbumSyncer"
+distributor="Coooolfan"
+distributor_url="https://github.com/Coooolfan/XiaomiAlbumSyncer"
+arch="@ARCH@"
+adminprotocol="http"
+adminurl="/"
+adminport="8080"
+dsmuidir="ui"
+dsmappname="com.coooolfan.packages.xiaomi-album-syncer"
+os_min_ver="7.0-40000"
+thirdparty="yes"
+silent_install="yes"
+silent_upgrade="yes"
+silent_uninstall="yes"
+description="Sync Xiaomi Cloud albums and recordings to your Synology NAS"
+description_chs="把小米云服务中的相册与录音同步到群晖 NAS"
+displayname="Xiaomi Album Syncer"
+displayname_chs="小米相册同步"
