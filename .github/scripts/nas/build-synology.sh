@@ -133,6 +133,13 @@ install -m 0644 "${TEMPLATE_DIR}/conf/privilege" "${STAGE}/conf/privilege"
 install -m 0644 "${REPO_ROOT}/LICENSE" "${STAGE}/LICENSE"
 
 echo "==> 打包 package.tgz（xz 压缩，与官方 pkg_make_package 一致）"
+# 官方 toolkit 用的是 tar cJf，缺少 xz 时 tar 会以退出码 2 失败且报错含糊，
+# 这里提前检查一次，把原因说清楚。
+if ! command -v xz >/dev/null 2>&1; then
+    echo "缺少 xz 命令。package.tgz 需要 xz 压缩（对齐官方 pkg_make_package）。" >&2
+    echo "请在 job 中先安装 xz-utils。" >&2
+    exit 1
+fi
 tar --owner=0 --group=0 --numeric-owner -cJf "${STAGE}/package.tgz" -C "${PAYLOAD}" .
 
 SPK_NAME="${PKG_NAME}-${ARCH}-${VERSION}.spk"
@@ -148,7 +155,9 @@ echo "==> 生成 ${SPK_NAME}"
 tar --owner=0 --group=0 --numeric-owner -cf "${SPK_PATH}" -C "${STAGE}" "${MEMBERS[@]}"
 
 echo "==> 校验产物结构"
-FIRST_MEMBER="$(tar -tf "${SPK_PATH}" | head -n 1)"
+# head 取到第一行就会关闭管道，tar 继续写入会收到 SIGPIPE；
+# 本脚本开启了 pipefail，不加 || true 会让整个构建以 tar 的退出码失败。
+FIRST_MEMBER="$(tar -tf "${SPK_PATH}" 2>/dev/null | head -n 1 || true)"
 if [ "${FIRST_MEMBER}" != "INFO" ]; then
     echo "SPK 首个成员应为 INFO，实际为 ${FIRST_MEMBER}" >&2
     exit 1
