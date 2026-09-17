@@ -95,6 +95,70 @@ QPKG 是自解压文件，自前向后为：
 - 套件图标 `.qpkg_icon.gif` / `.qpkg_icon_80.gif` / `.qpkg_icon_gray.gif` 必须放在
   **data 包**的根目录，`qinstall.sh` 的 `copy_qpkg_icons` 是从安装目录读取它们的。
 
+## 安装向导与设置页
+
+三个平台的能力**并不对等**，实现前先看这张表，避免做无用功：
+
+| 平台 | 安装时向导 | 设置页 | 机制 |
+| --- | --- | --- | --- |
+| 群晖 | ✅ | 通过向导重跑 | `WIZARD_UIFILES/install_uifile`，选中项的 `key` 以同名环境变量注入 `preinst`/`postinst` |
+| 飞牛 | ✅ | ✅ 应用设置页 | `wizard/install`（安装向导）、`wizard/config`（设置页） |
+| 威联通 | ❌ | ❌ | QPKG 经 App Center 安装是非交互的，QDK 没有安装期表单机制 |
+
+### 群晖
+
+`WIZARD_UIFILES/install_uifile` 是 JSON 数组，每个元素一个步骤：
+
+```json
+[{ "step_title": "标题", "items": [{
+     "type": "textfield",
+     "desc": "说明文字",
+     "subitems": [{
+         "key": "wizard_server_port",
+         "desc": "Web 端口",
+         "defaultValue": "8080",
+         "validator": { "allowBlank": false, "regex": { "expr": "/^[0-9]{2,5}$/", "errorText": "..." } }
+     }]
+}]}]
+```
+
+- `key` 会被 DSM 设成**同名环境变量**，在 `preinst`/`postinst` 里直接读 `$wizard_server_port`。
+  社区惯例是加 `wizard_` 前缀。
+- 语言变体用后缀：`install_uifile_chs`（简体）、`install_uifile_cht`（繁体）等。
+- **INFO 里绝不能出现 `silent_install="yes"`**，否则向导被整个跳过、设置页不显示。
+  `silent_upgrade` 可以保留，升级时不重复询问、沿用已有 `xas.env`。
+
+本套件的两个字段：`wizard_server_port`（端口）与 `wizard_data_dir`（数据目录，留空用默认位置）。
+`postinst` 读取后写入 `${VAR_DIR}/data/xas.env`；自定义数据目录以**软链接**挂到
+`${VAR_DIR}/data`，这样 `start-stop-status` 与启动脚本都不用改动。
+
+### 飞牛
+
+`wizard/` 下放 `install`、`config`、`uninstall`、`upgrade` 四个文件（都是 JSON，可选）：
+
+```json
+[{ "stepTitle": "安装设置", "items": [
+   { "type": "tips", "helpText": "说明，支持 HTML" },
+   { "type": "text", "field": "wizard_port", "label": "Web 端口", "initValue": "8080",
+     "rules": [ { "required": true, "message": "请输入端口号" },
+                { "pattern": "^[0-9]{2,5}$", "message": "端口必须是数字" } ] }
+]}]
+```
+
+（注意与群晖命名不同：飞牛是 `stepTitle`/`items`/`field`/`initValue`/`rules`，
+群晖是 `step_title`/`items`/`subitems`/`key`/`defaultValue`/`validator`。）
+
+**一个重要的坑**：飞牛走的是 Docker API 而不是 `docker compose` CLI，
+`docker-compose.yaml` 里**只有 `TRIM_*` 系列变量会被插值，`wizard_*` 不会**。
+所以端口必须写成 `"${TRIM_SERVICE_PORT}:8080"` 由飞牛注入宿主端口，
+而不能指望向导变量直接填进 compose。数据目录同理，自定义路径无法靠插值实现，
+因此本套件沿用飞牛托管的数据共享目录。
+
+### 威联通
+
+无法在安装时收集输入，改为**装后配置**：在数据目录放 `xas.env` 覆盖端口与数据目录，
+详见 README 的 NAS 章节。这里不要去自造一套配置 UI，偏离平台惯例且收益很低。
+
 ## 为什么群晖和威联通不用原生二进制
 
 CI 在 `ubuntu-24.04`（glibc 2.39）上产出的 GraalVM 原生镜像要求 `GLIBC_2.34`：

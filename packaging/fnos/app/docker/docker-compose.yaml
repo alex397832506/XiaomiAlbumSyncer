@@ -8,8 +8,11 @@ services:
     container_name: xiaomi-album-syncer
     restart: unless-stopped
     ports:
-      # 默认映射宿主机 8080。如需改端口，在飞牛「应用中心 -> 应用详情」里修改端口映射。
-      - "8080:8080"
+      # 宿主端口交由飞牛分配与管理，安装向导里填写的端口会体现在 TRIM_SERVICE_PORT 上。
+      # 容器端口固定 8080，与镜像内 SERVER_PORT 的默认值保持一致。
+      # 注意：飞牛走的是 Docker API 而非 docker compose CLI，compose 里只有 TRIM_*
+      # 系列变量会被插值，wizard_* 变量不会，因此端口只能经由 TRIM_SERVICE_PORT。
+      - "${TRIM_SERVICE_PORT}:8080"
     volumes:
       # 数据共享目录由飞牛托管在 /var/apps/<appname>/shares/ 下，升级套件不会丢失。
       # 数据库、日志与下载的媒体都应落在 /app/data 之内。

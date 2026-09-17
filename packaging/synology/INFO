@@ -21,7 +21,9 @@ dsmuidir="ui"
 dsmappname="com.coooolfan.packages.xiaomi-album-syncer"
 os_min_ver="7.0-40000"
 thirdparty="yes"
-silent_install="yes"
+# 不要设置 silent_install：它会跳过安装向导，导致 WIZARD_UIFILES 里的
+# 端口与数据目录设置页根本不显示。silent_upgrade 保留，升级时不重复询问，
+# 沿用已有的 xas.env 配置。
 silent_upgrade="yes"
 silent_uninstall="yes"
 description="Sync Xiaomi Cloud albums and recordings to your Synology NAS"

@@ -132,6 +132,14 @@ done
 install -m 0644 "${TEMPLATE_DIR}/conf/privilege" "${STAGE}/conf/privilege"
 install -m 0644 "${REPO_ROOT}/LICENSE" "${STAGE}/LICENSE"
 
+echo "==> 安装向导文件"
+INCLUDE_WIZARD=""
+if [ -d "${TEMPLATE_DIR}/WIZARD_UIFILES" ]; then
+    install -d "${STAGE}/WIZARD_UIFILES"
+    install -m 0644 "${TEMPLATE_DIR}"/WIZARD_UIFILES/* "${STAGE}/WIZARD_UIFILES/"
+    INCLUDE_WIZARD="WIZARD_UIFILES"
+fi
+
 echo "==> 打包 package.tgz（xz 压缩，与官方 pkg_make_package 一致）"
 # 官方 toolkit 用的是 tar cJf，缺少 xz 时 tar 会以退出码 2 失败且报错含糊，
 # 这里提前检查一次，把原因说清楚。
@@ -146,7 +154,11 @@ SPK_NAME="${PKG_NAME}-${ARCH}-${VERSION}.spk"
 SPK_PATH="${OUT_DIR}/${SPK_NAME}"
 
 # INFO 必须位于 tar 最前，因此显式列出成员顺序而非依赖 ls 的排序
-MEMBERS=(INFO LICENSE PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG conf package.tgz scripts)
+MEMBERS=(INFO LICENSE PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG)
+if [ -n "${INCLUDE_WIZARD}" ]; then
+    MEMBERS+=("${INCLUDE_WIZARD}")
+fi
+MEMBERS+=(conf package.tgz scripts)
 if [ -n "${INCLUDE_UI}" ]; then
     MEMBERS+=("${INCLUDE_UI}")
 fi
